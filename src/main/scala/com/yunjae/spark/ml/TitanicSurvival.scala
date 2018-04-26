@@ -30,13 +30,14 @@ object TitanicSurvival extends App {
   val toDouble = session.udf.register("toDouble", ((n: Int) => n.toDouble))
   val avgAge = dataFrame.select("Age").first()(0).asInstanceOf[Double]
 
+  // Age null 값 처리 및 필요없는 컬럼 제거
   val fillDataFrame = dataFrame.na.fill(avgAge, Seq("Age"))
     .drop("Name").drop("Cabin").drop("Embarked")
     .withColumn("Survived", toDouble(dataFrame("Survived")))
 
 
   //=========================
-  // indexer
+  // String indexer (String 값을 카테고리 처리)
   //=========================
   val sexIndexer = new StringIndexer().setInputCol("Sex").setOutputCol("SexIndex")
   val sexIndexerDataFrame = sexIndexer.fit(dataFrame).transform(dataFrame).select("Pclass", "Age", "SibSp", "Parch", "Sex", "Fare", "SexIndex")
@@ -45,7 +46,7 @@ object TitanicSurvival extends App {
   sexIndexerDataFrame.printSchema()
 
   //=========================
-  // classification (등급화)
+  // classification (Fare 등급화)
   //=========================
   val fareSplits = Array(0.0, 50.0, 100.0, 150.0, 200.0, Double.PositiveInfinity)
   val fareBucket = new Bucketizer().setInputCol("Fare").setOutputCol("FareBucket").setSplits(fareSplits)
@@ -59,7 +60,7 @@ object TitanicSurvival extends App {
     .setOutputCol("tmpFeatures")
 
   val normalizer = new Normalizer().setInputCol("tmpFeatures").setOutputCol("features")
-
+  // LogisticRegression 알고리즘
   val logres = new LogisticRegression().setMaxIter(10)
   logres.setLabelCol("Survived")
 
@@ -73,9 +74,11 @@ object TitanicSurvival extends App {
   val model = pipeline.fit(train)
   val result = model.transform(test)
 
-  result.show()
+  result.select("prediction", "Survived").show(10)
 
-  val predictionAndLable = result.select("prediction", "Survived").map(row => (row.get(0).asInstanceOf[Double], row.get(1).asInstanceOf[Double])).
+  val predictionAndLable = result.select("prediction", "Survived").rdd.map(row => (row.get(0).asInstanceOf[Double], row.get(1).asInstanceOf[Double]))
   val metrics = new BinaryClassificationMetrics(predictionAndLable)
+
+  println(s"Area under ROC = ${metrics.areaUnderROC()}")
 
 }
